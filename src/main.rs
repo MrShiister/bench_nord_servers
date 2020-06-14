@@ -1,27 +1,44 @@
-#[derive(Debug)]
-enum IPs {
-    Server(u8, u8, u8, u8),
-    Connected(u8, u8, u8, u8),
-    LastConnected(u8, u8, u8, u8),
+use std::any::Any;
+
+use std::net::IpAddr;
+use async_std::task;
+use public_ip::{dns, ToResolver, Resolution};
+  
+fn check_connection() -> Option<IpAddr> {
+    // List of resolvers to try and get an IP address from
+    let resolver = dns::OPENDNS_RESOLVER.to_resolver();
+    // Attempt to get an IP address and print it
+    if let Some(resolution) = task::block_on(public_ip::resolve(resolver)) {
+        if let Some(resolution) = Any::downcast_ref::<dns::DnsResolution>(&resolution) {
+            // println!("public ip address {:?} resolved from {:?} ({:?})",
+            //     resolution.address(),
+            //     resolution.name(),
+            //     resolution.server(),
+            // );
+            Some(resolution.address())
+        } else {
+            None
+        }
+    } else {
+        println!("Couldn't get an IP address.");
+        None
+    }
+
 }
 
 fn main() {
-    let server_ip = Some(IPs::Server(1,2,3,4));
-    let server_ip2 = None;
+    let ip = check_connection();
 
-    let server_ip = server_ip.unwrap_or(IPs::Server(0, 0, 0, 0));
-    let server_ip2 = server_ip2.unwrap_or(IPs::Server(0, 0, 0, 0));
-
-    let mut valid = 1;
-    if let IPs::Server(0, 0, 0, 0) = server_ip {
-        valid = 0;
+    match ip {
+        None => {
+            println!("Couldn't get IP!");
+            std::process::exit(1);
+        },
+        Some(_) => (),
     }
 
-    let valid2 = match server_ip2 {
-        IPs::Server(_, _, _, _) => 1,
-        IPs::Connected(_, _, _, _) => 2,
-        IPs::LastConnected(_, _, _, _) => 3,
-    };
-    println!("server_ip is {:?}", valid);
-    println!("server_ip2 is {:?}", valid2);
+    let ip = ip.unwrap();
+
+    println!("My IP is {}", ip);
+
 }
