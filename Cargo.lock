@@ -82,6 +82,7 @@ name = "bench_nord_servers"
 version = "0.1.0"
 dependencies = [
  "async-std",
+ "dns-lookup",
  "public-ip",
 ]
 
@@ -179,6 +180,17 @@ name = "data-encoding"
 version = "2.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "72aa14c04dfae8dd7d8a2b1cb7ca2152618cd01336dbfe704b8dcbf8d41dbd69"
+
+[[package]]
+name = "dns-lookup"
+version = "1.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4cbea23c15f7e685a7ad01c994407f3849fa7c88556aaafe4054215b6df93f78"
+dependencies = [
+ "libc",
+ "socket2",
+ "winapi 0.3.8",
+]
 
 [[package]]
 name = "endian-type"

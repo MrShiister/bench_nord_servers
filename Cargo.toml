@@ -9,3 +9,4 @@ edition = "2018"
 [dependencies]
 public-ip = "0.1.0"
 async-std = "1.6.1"
+dns-lookup = "1.0.3"
