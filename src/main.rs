@@ -21,51 +21,94 @@ fn get_internet_ip() -> Option<IpAddr> {
             None
         }
     } else {
-        println!("Couldn't get an IP address.");
+        //println!("Couldn't get an IP address.");
         None
     }
 
 }
 
-fn get_server_ip(hostname: String) -> Option<Vec<IpAddr>> {
+fn get_server_ip(hostname: &String) -> Option<IpAddr> {
     let ip: Result<Vec<IpAddr>, std::io::Error> = lookup_host(&hostname);
 
     match ip {
-        Ok(ip) => Some(ip),
+        Ok(ip) => Some(ip[0]),
         Err(error) => {
             println!("{}", error);
             None
         },
     }
-    // let ip: Option<Vec<std::net::IpAddr>> = lookup_host(&hostname);
 }
 
 fn main() {
-    let internet_ip = get_internet_ip();
 
-    match internet_ip {
-        None => {
-            println!("Couldn't get Internet IP!");
-            std::process::exit(1);
-        },
-        Some(_) => (),
+    struct IP {
+        ip: IpAddr,
+        octets: [u8; 4],
     }
 
-    let internet_ip = internet_ip.unwrap();
-    println!("My IP is {}", internet_ip);
+    let mut wrapped;
+    let mut ip;
+    let mut octets;
 
     let hostname = String::from("sg467.nordvpn.com");
-    let server_ip = get_server_ip(hostname);
 
-    match server_ip {
-        None => {
-            println!("Couldn't get Server IP!");
-            std::process::exit(1);
-        },
-        Some(_) => (),
+    for _i in 1..4 {
+
+        // Get Internet IP
+
+        wrapped = get_internet_ip();
+
+        match wrapped {
+            None => {
+                println!("Couldn't get Internet IP!");
+                continue
+                //std::process::exit(1);
+            },
+            Some(_) => (),
+        }
+
+        ip = wrapped.unwrap();
+
+        octets = match ip {
+            IpAddr::V4(ipv4) => ipv4.octets(),
+            _ => {
+                println!("Not handling IPv6!");
+                continue
+            },
+        };
+
+        let internet = IP {
+            ip,
+            octets,
+        };
+        println!("    My IP is {}", internet.ip);
+
+
+        // Get Server IP
+        wrapped = get_server_ip(&hostname);
+
+        match wrapped {
+            None => {
+                println!("Couldn't get Server IP!");
+                continue
+            },
+            Some(_) => (),
+        }
+
+        ip = wrapped.unwrap();
+
+        octets = match ip {
+            IpAddr::V4(ipv4) => ipv4.octets(),
+            _ => {
+                println!("Not handling IPv6!");
+                continue
+            },
+        };
+        let server = IP {
+            ip,
+            octets,
+        };
+        println!("Server IP is {}", server.ip);
     }
-
-    let server_ip = server_ip.unwrap();
-    println!("Server IP is {}", &server_ip[0]);
 
 }
