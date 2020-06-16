@@ -4,7 +4,8 @@ use std::net::{IpAddr, Ipv4Addr};
 use async_std::task;
 use public_ip::{dns, ToResolver, Resolution};
 use dns_lookup::lookup_host;
-use std::process::Command;
+// use std::io::{self, Write};
+use std::process::{Command, Stdio};
   
 fn resolve_internet_ip() -> Option<IpAddr> {
     // List of resolvers to try and get an IP address from
@@ -52,6 +53,7 @@ fn build_ip_struct(servername: &String) -> Option<IP> {
             Some(IP {
                 ip: ipv4,
                 octets: ipv4.octets(),
+                printable: format!("{}.{}.{}.{}", ipv4.octets()[0], ipv4.octets()[1], ipv4.octets()[2], ipv4.octets()[3]) 
             })
         } else {
             println!("Not handling IPv6!");
@@ -66,6 +68,17 @@ fn build_ip_struct(servername: &String) -> Option<IP> {
 struct IP {
     ip: Ipv4Addr,
     octets: [u8; 4],
+    printable: String,
+}
+
+struct Stats {
+    nord_server: String,
+    server_ip: String,
+    latency: f32,
+    jitter: f32,
+    packet_loss: f32,
+    download: u32,
+    upload: u32,
 }
 
 
@@ -79,11 +92,11 @@ fn main() {
     for _i in 1..4 {
 
         // Change to server
-        Command::new(r#"C:\Program Files (x86)\NordVPN\NordVPN.exe"#)
-                .arg("-c")
-                .args(&["-n", "Singapore #467"])
-                .output()
-                .expect("Failed to execute NordVPN.exe");
+        // Command::new(r#"C:\Program Files (x86)\NordVPN\NordVPN.exe"#)
+        //         .arg("-c")
+        //         .args(&["-n", "Singapore #467"])
+        //         .output()
+        //         .expect("Failed to execute NordVPN.exe");
 
         // Get Internet IP
         let internet = build_ip_struct(&myipname);
@@ -114,6 +127,114 @@ fn main() {
         }
 
         // Speedtest
+        let output = Command::new(r#"E:\Downloads\Programs\Windows\speedtest\speedtest.exe"#)
+                            .args(&["-f", "tsv"])
+                            .stderr(Stdio::null())
+                            .output()
+                            .expect("Failed to execute speedtest.exe");
+
+        if output.status.success() {
+            if let Ok(s) = String::from_utf8(output.stdout) {
+                let stats_vec: Vec<&str> = s.split_terminator('\t').collect();
+
+                let nord_server = String::from("sg467.nordvpn.com");
+                let latency = match stats_vec.get(2) {
+                    Some(value) => value,
+                    None => {
+                        eprintln!("Unable to retrieve 3rd element from output.");
+                        continue
+                    },
+                };
+                let jitter = match stats_vec.get(3) {
+                    Some(value) => value,
+                    None => {
+                        eprintln!("Unable to retrieve 4th element from output.");
+                        continue
+                    },
+                };
+                let packet_loss = match stats_vec.get(4) {
+                    Some(value) => value,
+                    None => {
+                        eprintln!("Unable to retrieve 5th element from output.");
+                        continue
+                    },
+                };
+                let download = match stats_vec.get(5) {
+                    Some(value) => value,
+                    None => {
+                        eprintln!("Unable to retrieve 6th element from output.");
+                        continue
+                    },
+                };
+                let upload = match stats_vec.get(6) {
+                    Some(value) => value,
+                    None => {
+                        eprintln!("Unable to retrieve 7th element from output.");
+                        continue
+                    },
+                };
+
+                let latency: f32 = match latency.parse() {
+                    Ok(num) => num,
+                    Err(_) => {
+                        eprintln!("Expected float for latency!");
+                        continue
+                    }
+                };
+                let jitter: f32 = match jitter.parse() {
+                    Ok(num) => num,
+                    Err(_) => 0.1,
+                };
+
+                let packet_loss: f32 = match packet_loss.parse() {
+                    Ok(num) => num,
+                    Err(_) => {
+                        eprintln!("Expected a float for latency!");
+                        continue
+                    }
+                };
+
+                let download: u32 = match download.parse() {
+                    Ok(num) => num,
+                    Err(_) => {
+                        eprintln!("Expected int for latency!");
+                        continue
+                    }
+                };
+
+                let upload: u32 = match upload.parse() {
+                    Ok(num) => num,
+                    Err(_) => {
+                        eprintln!("Expected int for latency!");
+                        continue
+                    }
+                };
+
+                let nord467 = Stats {
+                    nord_server: String::from("sg467.nordvpn.com"),
+                    server_ip: server.printable,
+                    latency,
+                    jitter,
+                    packet_loss,
+                    download,
+                    upload,
+                };
+            } else {
+                eprintln!("Failed to get string from stdout!");
+                continue
+            }
+        } else {
+            if let Some(code) = output.status.code() {
+                eprintln!("speedtest.exe failed with code {}", code);
+                continue
+            } else {
+                eprintln!("speedtest.exe terminated by signal.");
+                break
+            }
+        }
+        
+
+        break
         
         // Save score
     }
