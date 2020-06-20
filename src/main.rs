@@ -1,5 +1,6 @@
 mod check_connection;
-use crate::check_connection::{return_ip, speedtest};
+use crate::check_connection::{get_ip, speedtest};
+use std::io::{self, Write};
 
 fn main() {
 
@@ -10,6 +11,9 @@ fn main() {
     // to replace with server list
     for _i in 1..4 {
 
+        print!("Connecting to {}... ", &servername);
+        io::stdout().flush().unwrap();
+
         // Change to server
         // Command::new(r#"C:\Program Files (x86)\NordVPN\NordVPN.exe"#)
         //         .arg("-c")
@@ -18,7 +22,7 @@ fn main() {
         //         .expect("Failed to execute NordVPN.exe");
 
         // Get Internet IP
-        let internet = check_connection::return_ip(&myipname);
+        let internet = check_connection::get_ip(&myipname);
 
         if let None = internet {
             eprintln!("Failed to get internet IP!");
@@ -26,16 +30,16 @@ fn main() {
         }
 
         let internet = internet.unwrap();
-        println!("    My IP is {}", internet.ip);
+        // println!("    My IP is {}", internet.ip);
 
         // Get Server IP
-        let server = return_ip(&servername);
+        let server = get_ip(&servername);
         if let None = server {
             eprintln!("Failed to get server IP!");
             continue
         }
         let server = server.unwrap();
-        println!("Server IP is {}", server.ip);
+        // println!("Server IP is {}", server.ip);
 
         if internet.octets[0] != server.octets[0] ||
             internet.octets[1] != server.octets[1] ||
@@ -43,10 +47,21 @@ fn main() {
             internet.octets[3] - server.octets[3] > 5 {
             println!("IP Mismatch.");
             continue
+        } else {
+            println!("Successful.");
         }
 
         // Speedtest
+        print!("Speedtesting... ");
+        io::stdout().flush().unwrap();
         let stats = speedtest(&servername);
+        if let None = stats {
+            eprintln!("Failed to do speedtest!");
+            continue
+        }
+        let stats = stats.unwrap();
+        println!("Done.");
+        println!("Download speed is {:.1}MB/s", stats.download/1_000_000.0);
 
         break
         

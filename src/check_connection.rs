@@ -23,13 +23,13 @@ pub struct Stats {
     pub latency: f32,
     pub jitter: f32,
     pub packet_loss: f32,
-    pub download: u32,
-    pub upload: u32,
+    pub download: f32,
+    pub upload: f32,
 }
 
 // Returns the IP address of the argument (a host name);
 // Returns the internet IP address if argument is empty.
-pub fn return_ip(servername: &String) -> Option<IP> {
+pub fn get_ip(servername: &String) -> Option<IP> {
     let wrapped;
 
     if servername.is_empty() {
@@ -104,8 +104,9 @@ pub fn speedtest(servername: &String) -> Option<Stats> {
 
             let latency: f32 = match latency.parse() {
                 Ok(num) => num,
-                Err(_) => {
-                    eprintln!("Expected float for latency!");
+                Err(e) => {
+                    eprintln!("Expected a float for latency!");
+                    eprintln!("{}", e);
                     return None
                 }
             };
@@ -116,30 +117,33 @@ pub fn speedtest(servername: &String) -> Option<Stats> {
 
             let packet_loss: f32 = match packet_loss.parse() {
                 Ok(num) => num,
-                Err(_) => {
-                    eprintln!("Expected a float for latency!");
+                Err(e) => {
+                    eprintln!("Expected a float for packet loss!");
+                    eprintln!("{}", e);
                     return None
                 }
             };
 
-            let download: u32 = match download.parse() {
+            let download: f32 = match download.parse() {
                 Ok(num) => num,
-                Err(_) => {
-                    eprintln!("Expected int for latency!");
+                Err(e) => {
+                    eprintln!("Expected a float for download!");
+                    eprintln!("{}", e);
                     return None
                 }
             };
 
-            let upload: u32 = match upload.parse() {
+            let upload: f32 = match upload.parse() {
                 Ok(num) => num,
-                Err(_) => {
-                    eprintln!("Expected int for latency!");
+                Err(e) => {
+                    eprintln!("Expected a float for upload!");
+                    eprintln!("{}", e);
                     return None
                 }
             };
 
             Some(Stats {
-                nord_server: String::from("sg467.nordvpn.com"),
+                nord_server,
                 server_ip: format!("{}", servername),
                 latency,
                 jitter,
