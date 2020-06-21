@@ -83,6 +83,7 @@ version = "0.1.0"
 dependencies = [
  "async-std",
  "dns-lookup",
+ "ordered-float",
  "public-ip",
 ]
 
@@ -653,6 +654,15 @@ name = "once_cell"
 version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b631f7e854af39a1739f401cf34a8a013dfe09eac4fa4dba91e9768bd28168d"
+
+[[package]]
+name = "ordered-float"
+version = "1.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "18869315e81473c951eb56ad5558bbc56978562d3ecfb87abb7a1e944cea4518"
+dependencies = [
+ "num-traits",
+]
 
 [[package]]
 name = "percent-encoding"

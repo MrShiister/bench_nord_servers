@@ -17,19 +17,23 @@ impl fmt::Display for IP {
     }
 }
 
-pub struct Stats {
-    pub nord_server: String,
-    pub server_ip: String,
+pub struct Stats<'a> {
+    pub nord_server: &'a str,
+    pub server_ip: Ipv4Addr,
+    pub internet_ip: Ipv4Addr,
     pub latency: f32,
     pub jitter: f32,
     pub packet_loss: f32,
+    pub no_pl_data: bool,
     pub download: f32,
     pub upload: f32,
+    pub game_score: f32,
+    pub usage_score: f32,
 }
 
 // Returns the IP address of the argument (a host name);
 // Returns the internet IP address if argument is empty.
-pub fn get_ip(servername: &String) -> Option<IP> {
+pub fn get_ip(servername: &str) -> Option<IP> {
     let wrapped;
 
     if servername.is_empty() {
@@ -54,7 +58,7 @@ pub fn get_ip(servername: &String) -> Option<IP> {
     }
 }
 
-pub fn speedtest(servername: &String) -> Option<Stats> {
+pub fn speedtest(servername: &str, server_ip: Ipv4Addr, internet_ip: Ipv4Addr) -> Option<Stats> {
     let output = Command::new(r#"E:\Downloads\Programs\Windows\speedtest\speedtest.exe"#)
                         .args(&["-f", "tsv"])
                         .stderr(Stdio::null())
@@ -65,7 +69,8 @@ pub fn speedtest(servername: &String) -> Option<Stats> {
         if let Ok(s) = String::from_utf8(output.stdout) {
             let stats_vec: Vec<&str> = s.split_terminator('\t').collect();
 
-            let nord_server = String::from("sg467.nordvpn.com");
+            // let nord_server = &servername.to_string();
+
             let latency = match stats_vec.get(2) {
                 Some(value) => value,
                 None => {
@@ -112,16 +117,23 @@ pub fn speedtest(servername: &String) -> Option<Stats> {
             };
             let jitter: f32 = match jitter.parse() {
                 Ok(num) => num,
-                Err(_) => 0.1,
-            };
-
-            let packet_loss: f32 = match packet_loss.parse() {
-                Ok(num) => num,
                 Err(e) => {
-                    eprintln!("Expected a float for packet loss!");
+                    eprintln!("Expected a float for jitter!");
                     eprintln!("{}", e);
                     return None
                 }
+            };
+
+            let no_pl_data;
+            let packet_loss: f32 = match packet_loss.parse() {
+                Ok(num) => {
+                    no_pl_data = false;
+                    num
+                },
+                Err(_) => {
+                    no_pl_data = true;
+                    0.3
+                },
             };
 
             let download: f32 = match download.parse() {
@@ -143,13 +155,17 @@ pub fn speedtest(servername: &String) -> Option<Stats> {
             };
 
             Some(Stats {
-                nord_server,
-                server_ip: format!("{}", servername),
+                nord_server: servername,
+                server_ip,
+                internet_ip,
                 latency,
                 jitter,
                 packet_loss,
+                no_pl_data,
                 download,
                 upload,
+                usage_score: 0.0,
+                game_score: 0.0,
             })
         } else {
             eprintln!("Failed to get string from stdout!");
@@ -188,7 +204,7 @@ fn resolve_internet_ip() -> Option<IpAddr> {
 
 }
 
-fn resolve_server_ip(servername: &String) -> Option<IpAddr> {
+fn resolve_server_ip(servername: &str) -> Option<IpAddr> {
     // let ip: Result<Vec<IpAddr>, std::io::Error> = lookup_host(&servername);
     if let Ok(ip) = lookup_host(&servername) {
         Some(ip[0])
