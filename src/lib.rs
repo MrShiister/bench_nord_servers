@@ -48,28 +48,30 @@ impl fmt::Display for IP {
     }
 }
 
-pub struct Stats<'a> {
-    pub nord_server: &'a str,
-    pub server_ip: Ipv4Addr,
-    pub internet_ip: Ipv4Addr,
-    pub latency: f32,
-    pub jitter: f32,
-    pub packet_loss: f32,
-    pub no_pl_data: bool,
-    pub download: f32,
-    pub upload: f32,
-    pub game_score: f32,
-    pub usage_score: f32,
+struct Stats<'a> {
+    nord_server: &'a str,
+    server_ip: Ipv4Addr,
+    internet_ip: Ipv4Addr,
+    latency: f32,
+    jitter: f32,
+    packet_loss: f32,
+    no_pl_data: bool,
+    download: f32,
+    upload: f32,
+    game_score: f32,
+    usage_score: f32,
 }
 
+struct Weight {
+    latency: f32,
+    jitter: f32,
+    packet_loss: f32,
+    download: f32,
+    upload: f32,
+}
+
+
 pub fn run(config: Config) -> Result<(), Box<dyn Error>> {
-    struct Weight {
-        latency: f32,
-        jitter: f32,
-        packet_loss: f32,
-        download: f32,
-        upload: f32,
-    }
     let game_wt = Weight {
         latency: 50.0,
         jitter: 15.0,
@@ -89,9 +91,14 @@ pub fn run(config: Config) -> Result<(), Box<dyn Error>> {
 
     //let serverlist = vec!["sg467.nordvpn.com", "sg468.nordvpn.com"];
     let mut serverlist: Vec<String> = Vec::new();
-    let contents = fs::read_to_string(config.filename)?;
+    let contents = fs::read_to_string(&config.filename)?;
     for line in contents.lines() {
         serverlist.push(line.to_string());
+    }
+
+    if serverlist.len() == 0 {
+        eprintln!("No servers collected! {} is empty.", config.filename);
+        process::exit(1);
     }
 
     let mut scores = vec![];
@@ -102,7 +109,7 @@ pub fn run(config: Config) -> Result<(), Box<dyn Error>> {
         println!("Connecting to {}", servername);
 
         let servernum: u16 = servername[2..5].parse().unwrap_or_else(|err| {
-            eprintln!("Failed to get server number: {}", err);
+            eprintln!("Failed to read server number: {}", err);
             process::exit(1);
         });
 
@@ -179,13 +186,35 @@ pub fn run(config: Config) -> Result<(), Box<dyn Error>> {
 
         scores.push(stats);
 
-        // Save score
+        // TODO handle Interrupt
+
     }
 
+    if let Err(e) = tabulate_score(scores, game_wt, usage_wt) {
+        eprintln!("Failed to tabulate scores: {}", e);
+        process::exit(1);
+    }
+
+    Ok(())
+}
+
+fn tabulate_score(mut scores: Vec<Stats>, game_wt: Weight, usage_wt: Weight) -> Result<(), Box<dyn Error>> {
     // Tabulate and print score
-    // TODO handle unwrap
-    let max_dl = scores.iter().max_by_key(|s| OrderedFloat(s.download)).unwrap().download;
-    let max_ul = scores.iter().max_by_key(|s| OrderedFloat(s.upload)).unwrap().upload;
+    let max_dl = scores.iter().max_by_key(|s| OrderedFloat(s.download)).unwrap_or_else(|| {
+        eprintln!("Problem finding max of download speeds");
+        process::exit(1);
+    }).download;
+    let max_ul = scores.iter().max_by_key(|s| OrderedFloat(s.upload)).unwrap_or_else(|| {
+        eprintln!("Problem finding max of upload speeds");
+        process::exit(1);
+    }).upload;
+
+    if max_dl == 0.0 {
+        return Err("Max download is 0".into())
+    }
+    if max_ul == 0.0 {
+        return Err("Max upload is 0".into())
+    }
 
     for score in &mut scores {
         // Calculate game_score and usage_score
@@ -243,7 +272,7 @@ pub fn run(config: Config) -> Result<(), Box<dyn Error>> {
     Ok(())
 
 }
-// Returns the IP address of the argument (a host name);
+// Returns the IP address of the argument (a hostname);
 // Returns the internet IP address if string is 0-length.
 fn get_ip(servername: &str) -> Option<IP> {
     let wrapped;
