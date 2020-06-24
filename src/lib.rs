@@ -2,6 +2,7 @@ use async_std::task;
 use dns_lookup::lookup_host;
 use ordered_float::OrderedFloat;
 use public_ip::{dns, ToResolver, Resolution};
+use chrono::Utc;
 use std::{
     any::Any,
     error::Error,
@@ -20,13 +21,15 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn new(args: &[String]) -> Result<Config, &'static str> {
-        let filename;
-        if args.len() == 1 {
-            filename = String::from("serverlist.txt")
-        } else if args.len() == 2 {
-            filename = args[1].clone();
-        } else {
+    pub fn new(mut args: std::env::Args) -> Result<Config, &'static str> {
+        args.next();
+
+        let filename = match args.next() {
+            Some(arg) => arg,
+            None => String::from("serverlist.txt"),
+        };
+
+        if let Some(_) = args.next() {
             return Err("Too many arguments!");
         }
 
@@ -44,7 +47,7 @@ pub struct IP {
 
 impl fmt::Display for IP {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}.{}.{}.{}", self.octets[0], self.octets[1], self.octets[2], self.octets[3]) 
+        writeln!(f, "{}.{}.{}.{}", self.octets[0], self.octets[1], self.octets[2], self.octets[3]) 
     }
 }
 
@@ -70,22 +73,32 @@ struct Weight {
     upload: f32,
 }
 
+impl Weight {
+    fn game() -> Weight {
+        Weight {
+            latency: 50.0,
+            jitter: 15.0,
+            packet_loss: 25.0,
+            download: 5.0,
+            upload: 5.0,
+        }
+    }
+    fn usage() -> Weight {
+        Weight {
+            latency: 10.0,
+            jitter: 10.0,
+            packet_loss: 5.0,
+            download: 50.0,
+            upload: 25.0,
+        }
+    }
+}
+
+
 
 pub fn run(config: Config) -> Result<(), Box<dyn Error>> {
-    let game_wt = Weight {
-        latency: 50.0,
-        jitter: 15.0,
-        packet_loss: 25.0,
-        download: 5.0,
-        upload: 5.0,
-    };
-    let usage_wt = Weight {
-        latency: 10.0,
-        jitter: 10.0,
-        packet_loss: 5.0,
-        download: 50.0,
-        upload: 25.0,
-    };
+    let game_wt = Weight::game();
+    let usage_wt = Weight::usage();
 
     let myipname = String::from("");
 
@@ -154,7 +167,7 @@ pub fn run(config: Config) -> Result<(), Box<dyn Error>> {
             }
         }
         if let None = server {
-            eprintln!(": Failed to get server IP!");
+            eprintln!(" > Failed to get server IP!");
             continue
         }
         let server = server.unwrap();
@@ -164,10 +177,10 @@ pub fn run(config: Config) -> Result<(), Box<dyn Error>> {
             internet.octets[1] != server.octets[1] ||
             internet.octets[2] != server.octets[2] ||
             internet.octets[3] - server.octets[3] > 5 {
-            println!(": IP Mismatch.");
+            println!(" > IP Mismatch.");
             continue
         } else {
-            println!(": Successful.");
+            println!(" > Successful.");
         }
 
         // Speedtest
@@ -178,7 +191,7 @@ pub fn run(config: Config) -> Result<(), Box<dyn Error>> {
         });
         let stats = speedtest(&servername, server.ip, internet.ip);
         if let None = stats {
-            eprintln!("Failed to do speedtest!");
+            eprintln!(" > Failed to do speedtest!");
             continue
         }
         let stats = stats.unwrap();
@@ -190,15 +203,23 @@ pub fn run(config: Config) -> Result<(), Box<dyn Error>> {
 
     }
 
-    if let Err(e) = tabulate_score(scores, game_wt, usage_wt) {
-        eprintln!("Failed to tabulate scores: {}", e);
+    let scores = match tabulate_score(scores, game_wt, usage_wt) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!(" > Failed to tabulate scores: {}", e);
+            process::exit(1);
+        }
+    };
+
+    if let Err(e) = write_results(scores) {
+        eprintln!(" > Failed to write results: {}", e);
         process::exit(1);
     }
 
     Ok(())
 }
 
-fn tabulate_score(mut scores: Vec<Stats>, game_wt: Weight, usage_wt: Weight) -> Result<(), Box<dyn Error>> {
+fn tabulate_score(mut scores: Vec<Stats>, game_wt: Weight, usage_wt: Weight) -> Result<Vec<Stats>, Box<dyn Error>> {
     // Tabulate and print score
     let max_dl = scores.iter().max_by_key(|s| OrderedFloat(s.download)).unwrap_or_else(|| {
         eprintln!("Problem finding max of download speeds");
@@ -232,13 +253,21 @@ fn tabulate_score(mut scores: Vec<Stats>, game_wt: Weight, usage_wt: Weight) -> 
 
 
         // sort scores
+    }
 
-        // print tsv
-        // TODO write to file
-        println!("nord_server\tserver_ip\tinternet_ip\tlatency\tjitter\tpacket_loss\tdownload\tupload\tgame_score\tusage_score");
+    Ok(scores)
+
+}
+
+fn write_results(scores: Vec<Stats>) -> Result<(), Box<dyn Error>> {
+    let outfile = Utc::now().format("results_%Y%m%d%H%M%S.tsv").to_string();
+    let mut buffer = fs::File::create(outfile)?;
+
+    writeln!(buffer, "nord_server\tserver_ip\tinternet_ip\tlatency\tjitter\tpacket_loss\tdownload\tupload\tgame_score\tusage_score")?;
+    for score in &scores {
         match score.no_pl_data {
             false => {
-                println!("{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+                writeln!(buffer, "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
                     score.nord_server,
                     score.server_ip,
                     score.internet_ip,
@@ -249,12 +278,13 @@ fn tabulate_score(mut scores: Vec<Stats>, game_wt: Weight, usage_wt: Weight) -> 
                     score.upload,
                     score.game_score,
                     score.usage_score
-                );
+                )?;
             }
             true => {
-                println!("{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+                writeln!(buffer, "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
                     score.nord_server,
                     score.server_ip,
+                    score.internet_ip,
                     score.latency,
                     score.jitter,
                     "N/A",
@@ -262,12 +292,12 @@ fn tabulate_score(mut scores: Vec<Stats>, game_wt: Weight, usage_wt: Weight) -> 
                     score.upload,
                     score.game_score,
                     score.usage_score
-                );
+                )?;
             }
         }
-        // println!("Download speed in {} is {:.1}MB/s", score.nord_server, score.download/1_000_000.0);
-    }
+    // println!("Download speed in {} is {:.1}MB/s", score.nord_server, score.download/1_000_000.0);
 
+    }
 
     Ok(())
 
