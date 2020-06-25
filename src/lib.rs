@@ -263,6 +263,16 @@ fn write_results(scores: Vec<Stats>) -> Result<(), Box<dyn Error>> {
     let outfile = Utc::now().format("results_%Y%m%d%H%M%S.tsv").to_string();
     let mut buffer = fs::File::create(outfile)?;
 
+    println!("Best game server: {}", scores.iter().max_by_key(|s| OrderedFloat(s.game_score)).unwrap_or_else(|| {
+        eprintln!("Problem getting best game server");
+        process::exit(1);
+    }).nord_server);
+    
+    println!("Best usage server: {}", scores.iter().max_by_key(|s| OrderedFloat(s.usage_score)).unwrap_or_else(|| {
+        eprintln!("Problem getting best usage server");
+        process::exit(1);
+    }).nord_server);
+
     writeln!(buffer, "nord_server\tserver_ip\tinternet_ip\tlatency\tjitter\tpacket_loss\tdownload\tupload\tgame_score\tusage_score")?;
     for score in &scores {
         match score.no_pl_data {
