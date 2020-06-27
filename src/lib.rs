@@ -4,6 +4,7 @@ use ordered_float::OrderedFloat;
 use public_ip::{dns, ToResolver, Resolution};
 use chrono::Local;
 use std::{
+    cmp::{max, min},
     any::Any,
     error::Error,
     fmt,
@@ -13,6 +14,8 @@ use std::{
     process::{self, Command, Stdio},
     thread::sleep,
     time::Duration,
+    sync::atomic::{AtomicBool, Ordering},
+    sync::Arc,
 };
 
 pub struct Config {
@@ -115,7 +118,19 @@ pub fn run(config: Config) -> Result<(), Box<dyn Error>> {
 
     let mut scores = vec![];
 
+    let exit_flag = Arc::new(AtomicBool::new(false));
+    let exit_flag_clone = exit_flag.clone();
+
+    ctrlc::set_handler(move || {
+        exit_flag_clone.store(true, Ordering::SeqCst);
+        println!("Captured Ctrl-C! Stopping after this server...");
+    }).expect("Error setting Ctrl-C handler.");
+
     for servername in &serverlist {
+
+        if exit_flag.load(Ordering::SeqCst) {
+            break
+        }
 
         connect_to(servername);
 
@@ -124,7 +139,7 @@ pub fn run(config: Config) -> Result<(), Box<dyn Error>> {
         // Get Internet IP
         let mut internet = get_ip(&myipname);
 
-        for _i in 1..=config.retries {
+        for _ in 1..=config.retries {
             if let None = internet {
                 sleep(Duration::new(1, 0));
                 internet = get_ip(&myipname);
@@ -202,8 +217,6 @@ pub fn run(config: Config) -> Result<(), Box<dyn Error>> {
         println!("Done.");
 
         scores.push(stats);
-
-        // TODO handle Interrupt
 
     }
 
@@ -342,7 +355,7 @@ fn verify_ip_match(internet: &IP , server: &IP) -> bool {
     if  internet.octets[0] != server.octets[0] ||
         internet.octets[1] != server.octets[1] ||
         internet.octets[2] != server.octets[2] ||
-        internet.octets[3] - server.octets[3] > 5 {
+        max(internet.octets[3], server.octets[3]) - min(internet.octets[3], server.octets[3]) > 5 {
         println!(" > IP Mismatch.");
         false
     } else {
