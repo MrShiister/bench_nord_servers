@@ -134,14 +134,14 @@ pub fn run(config: Config) -> Result<(), Box<dyn Error>> {
 
         connect_to(servername);
 
-        sleep(Duration::new(1, 0));
+        sleep(Duration::from_millis(100));
 
         // Get Internet IP
         let mut internet = get_ip(&myipname);
 
         for _ in 1..=config.retries {
             if let None = internet {
-                sleep(Duration::new(1, 0));
+                sleep(Duration::from_millis(100));
                 internet = get_ip(&myipname);
             } else {
                 break
@@ -157,10 +157,12 @@ pub fn run(config: Config) -> Result<(), Box<dyn Error>> {
         // Get Server IP
         let mut server = get_ip(&servername);
 
-        if let None = server {
-            sleep(Duration::new(1, 0));
-            server = get_ip(&servername);
-        } 
+        for _ in 1..=config.retries {
+            if let None = server {
+                sleep(Duration::from_millis(100));
+                server = get_ip(&servername);
+            } 
+        }
         if let None = server {
             eprintln!(" > Couldn't find server.");
             continue
