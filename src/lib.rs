@@ -2,7 +2,7 @@ use async_std::task;
 use dns_lookup::lookup_host;
 use ordered_float::OrderedFloat;
 use public_ip::{dns, ToResolver, Resolution};
-use chrono::Utc;
+use chrono::Local;
 use std::{
     any::Any,
     error::Error,
@@ -38,7 +38,6 @@ impl Config {
         Ok(Config { filename, retries })
     }
 }
-
 
 pub struct IP {
     pub ip: Ipv4Addr,
@@ -116,23 +115,9 @@ pub fn run(config: Config) -> Result<(), Box<dyn Error>> {
 
     let mut scores = vec![];
 
-    // to replace with server list
     for servername in &serverlist {
 
-        println!("Connecting to {}", servername);
-
-        let servernum: u16 = servername[2..5].parse().unwrap_or_else(|err| {
-            eprintln!("Failed to read server number: {}", err);
-            process::exit(1);
-        });
-
-        // Change to server
-        Command::new(r#"C:\Program Files (x86)\NordVPN\NordVPN.exe"#)
-                .arg("-c")
-                .arg("-n")
-                .arg(format!("Singapore #{}", servernum))
-                .output()
-                .expect("Failed to execute NordVPN.exe");
+        connect_to(servername);
 
         sleep(Duration::new(1, 0));
 
@@ -148,39 +133,43 @@ pub fn run(config: Config) -> Result<(), Box<dyn Error>> {
             }
         }
          if let None = internet {
-             eprintln!(": Failed to get internet IP!");
+             eprintln!(" > Failed to get internet IP!");
              continue
          }
 
         let internet = internet.unwrap();
-        // println!("    My IP is {}", internet.ip);
 
         // Get Server IP
         let mut server = get_ip(&servername);
 
-        for _i in 1..=config.retries {
-            if let None = server {
-                sleep(Duration::new(1, 0));
-                server = get_ip(&myipname);
-            } else {
-                break
-            }
-        }
         if let None = server {
-            eprintln!(" > Failed to get server IP!");
+            sleep(Duration::new(1, 0));
+            server = get_ip(&servername);
+        } 
+        if let None = server {
+            eprintln!(" > Couldn't find server.");
             continue
         }
         let server = server.unwrap();
-        // println!("Server IP is {}", server.ip);
 
-        if internet.octets[0] != server.octets[0] ||
-            internet.octets[1] != server.octets[1] ||
-            internet.octets[2] != server.octets[2] ||
-            internet.octets[3] - server.octets[3] > 5 {
-            println!(" > IP Mismatch.");
+        if let false = verify_ip_match(&internet, &server) {
+            let stats = Stats {
+                nord_server: servername,
+                server_ip: server.ip,
+                internet_ip: internet.ip,
+                latency: 0.0,
+                jitter: 0.0,
+                packet_loss: 0.0,
+                no_pl_data: true,
+                download: 0.0,
+                upload: 0.0,
+                usage_score: 0.0,
+                game_score: 0.0,
+            };
+
+            scores.push(stats);
+
             continue
-        } else {
-            println!(" > Successful.");
         }
 
         // Speedtest
@@ -192,6 +181,21 @@ pub fn run(config: Config) -> Result<(), Box<dyn Error>> {
         let stats = speedtest(&servername, server.ip, internet.ip);
         if let None = stats {
             eprintln!(" > Failed to do speedtest!");
+            let stats = Stats {
+                nord_server: servername,
+                server_ip: server.ip,
+                internet_ip: internet.ip,
+                latency: 0.0,
+                jitter: 0.0,
+                packet_loss: 0.0,
+                no_pl_data: true,
+                download: 0.0,
+                upload: 0.0,
+                usage_score: 0.0,
+                game_score: 0.0,
+            };
+
+            scores.push(stats);
             continue
         }
         let stats = stats.unwrap();
@@ -238,21 +242,23 @@ fn tabulate_score(mut scores: Vec<Stats>, game_wt: Weight, usage_wt: Weight) -> 
     }
 
     for score in &mut scores {
-        // Calculate game_score and usage_score
-        score.game_score =  (1.0 - score.latency/250.0)   * game_wt.latency       +
-                            (1.0 - score.jitter/5.0)      * game_wt.jitter        +
-                            (1.0 - score.packet_loss/3.0) * game_wt.packet_loss   +
-                            score.download/max_dl         * game_wt.download      +
-                            score.upload/max_ul           * game_wt.upload;
+        if score.download > 0.0 {
+            // Calculate game_score and usage_score
+            score.game_score =  (1.0 - score.latency/250.0)   * game_wt.latency       +
+                                (1.0 - score.jitter/5.0)      * game_wt.jitter        +
+                                (1.0 - score.packet_loss/3.0) * game_wt.packet_loss   +
+                                score.download/max_dl         * game_wt.download      +
+                                score.upload/max_ul           * game_wt.upload;
 
-        score.usage_score =  (1.0 - score.latency/250.0)   * usage_wt.latency       +
-                             (1.0 - score.jitter/5.0)      * usage_wt.jitter        +
-                             (1.0 - score.packet_loss/3.0) * usage_wt.packet_loss   +
-                             score.download/max_dl         * usage_wt.download      +
-                             score.upload/max_ul           * usage_wt.upload;
+            score.usage_score =  (1.0 - score.latency/250.0)   * usage_wt.latency       +
+                                 (1.0 - score.jitter/5.0)      * usage_wt.jitter        +
+                                 (1.0 - score.packet_loss/3.0) * usage_wt.packet_loss   +
+                                 score.download/max_dl         * usage_wt.download      +
+                                 score.upload/max_ul           * usage_wt.upload;
 
 
-        // sort scores
+            // sort scores
+        }
     }
 
     Ok(scores)
@@ -260,7 +266,7 @@ fn tabulate_score(mut scores: Vec<Stats>, game_wt: Weight, usage_wt: Weight) -> 
 }
 
 fn write_results(scores: Vec<Stats>) -> Result<(), Box<dyn Error>> {
-    let outfile = Utc::now().format("results_%Y%m%d%H%M%S.tsv").to_string();
+    let outfile = Local::now().format("results_%Y%m%d%H%M%S.tsv").to_string();
     let mut buffer = fs::File::create(outfile)?;
 
     println!("Best game server: {}", scores.iter().max_by_key(|s| OrderedFloat(s.game_score)).unwrap_or_else(|| {
@@ -312,9 +318,42 @@ fn write_results(scores: Vec<Stats>) -> Result<(), Box<dyn Error>> {
     Ok(())
 
 }
-// Returns the IP address of the argument (a hostname);
-// Returns the internet IP address if string is 0-length.
+
+fn connect_to(servername: &str) {
+
+    println!("Connecting to {}", servername);
+
+    let servernum: u16 = servername[2..5].parse().unwrap_or_else(|err| {
+        eprintln!("Failed to read server number: {}", err);
+        process::exit(1);
+    });
+
+    // Change to server
+    Command::new(r#"C:\Program Files (x86)\NordVPN\NordVPN.exe"#)
+        .arg("-c")
+        .arg("-n")
+        .arg(format!("Singapore #{}", servernum))
+        .output()
+        .expect("Failed to execute NordVPN.exe");
+}
+
+fn verify_ip_match(internet: &IP , server: &IP) -> bool {
+
+    if  internet.octets[0] != server.octets[0] ||
+        internet.octets[1] != server.octets[1] ||
+        internet.octets[2] != server.octets[2] ||
+        internet.octets[3] - server.octets[3] > 5 {
+        println!(" > IP Mismatch.");
+        false
+    } else {
+        println!(" > Successful.");
+        true
+    }
+}
+
 fn get_ip(servername: &str) -> Option<IP> {
+    // Returns the IP address of the argument (a hostname);
+    // Returns the internet IP address if string is 0-length.
     let wrapped;
 
     if servername.is_empty() {
@@ -330,11 +369,11 @@ fn get_ip(servername: &str) -> Option<IP> {
                 octets: ipv4.octets(),
             })
         } else {
-            println!(": Not handling IPv6!");
+            eprintln!(" > Not handling IPv6!");
             None
         }
     } else {
-        println!(": Couldn't resolve Internet IP!");
+        // eprintln!(" > Couldn't resolve IP!");
         None
     }
 }
@@ -490,8 +529,53 @@ fn resolve_server_ip(servername: &str) -> Option<IpAddr> {
     if let Ok(ip) = lookup_host(&servername) {
         Some(ip[0])
     } else {
-        eprintln!("Couldn't resolve server IP!");
+        // eprintln!("Couldn't resolve server IP!");
         None
     }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn verify_ip_invalid() {
+        let ret = get_ip("sg228.nordvpn.com");
+        assert!(ret.is_none());
+    }
+
+    #[test]
+    fn verify_ip_valid() {
+        let myipname = "";
+        let servername = "sg467.nordvpn.com";
+
+        let server = get_ip(&servername);
+        assert!(server.is_some());
+        let server = server.unwrap();
+
+    }
+
+    #[test]
+    fn verify_connect_valid() {
+        
+        let myipname = "";
+        let servername = "sg467.nordvpn.com";
+
+        let server = get_ip(&servername);
+        assert!(server.is_some());
+        let server = server.unwrap();
+
+        connect_to(&servername);
+        sleep(Duration::new(1, 0));
+
+        let internet = get_ip(&myipname);
+        assert!(internet.is_some());
+        let internet = internet.unwrap();
+
+        assert!(verify_ip_match(&internet, &server));
+
+    }
+
 }
 

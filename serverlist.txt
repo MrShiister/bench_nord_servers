@@ -1,2 +1,5 @@
-sg472.nordvpn.com
+sg178.nordvpn.com
+sg179.nordvpn.com
+sg219.nordvpn.com
+sg303.nordvpn.com
 sg467.nordvpn.com
