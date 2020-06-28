@@ -12,10 +12,11 @@ use std::{
     io::{self, Write},
     net::{IpAddr, Ipv4Addr},
     process::{self, Command, Stdio},
-    thread::sleep,
+    thread::{self, sleep},
     time::Duration,
     sync::atomic::{AtomicBool, Ordering},
     sync::Arc,
+    sync::mpsc,
 };
 
 pub struct Config {
@@ -42,9 +43,9 @@ impl Config {
     }
 }
 
-pub struct IP {
-    pub ip: Ipv4Addr,
-    pub octets: [u8; 4],
+struct IP {
+    ip: Ipv4Addr,
+    octets: [u8; 4],
 }
 
 impl fmt::Display for IP {
@@ -53,8 +54,8 @@ impl fmt::Display for IP {
     }
 }
 
-struct Stats<'a> {
-    nord_server: &'a str,
+struct Stats {
+    nord_server: String,
     server_ip: Ipv4Addr,
     internet_ip: Ipv4Addr,
     latency: f32,
@@ -65,6 +66,24 @@ struct Stats<'a> {
     upload: f32,
     game_score: f32,
     usage_score: f32,
+}
+
+impl<'a> Stats {
+    fn new(servername: String, ip: IP, internet_ip: Ipv4Addr) -> Stats {
+        Stats {
+            nord_server: servername,
+            server_ip: ip.ip,
+            internet_ip,
+            latency: 0.0,
+            jitter: 0.0,
+            packet_loss: 0.0,
+            no_pl_data: true,
+            download: 0.0,
+            upload: 0.0,
+            usage_score: 0.0,
+            game_score: 0.0,
+        }
+    }
 }
 
 struct Weight {
@@ -126,13 +145,49 @@ pub fn run(config: Config) -> Result<(), Box<dyn Error>> {
         println!("Captured Ctrl-C! Stopping after this server...");
     }).expect("Error setting Ctrl-C handler.");
 
-    for servername in &serverlist {
+
+    // Multithread the finding of valid servers
+    let (tx, rx) = mpsc::channel();
+
+    let retries = config.retries;
+
+    for servername in serverlist {
+        let tx_clone = mpsc::Sender::clone(&tx);
+        thread::spawn(move || {
+            let mut server = get_ip(&servername);
+
+            for _ in 1..=retries {
+                if let None = server {
+                    sleep(Duration::from_millis(100));
+                    server = get_ip(&servername);
+                } else {
+                    break
+                }
+            }
+            if let Some(s) = server {
+                tx_clone.send((servername, s)).unwrap();
+            }
+        });
+    }
+
+    // For the sake of simpler code, we just drop the original
+    drop(tx);
+
+    let mut serverlist_valid: Vec<(String, IP)> = Vec::new();
+
+    for received in rx {
+        serverlist_valid.push(received);
+    }
+
+    println!("All servers have been probed.");
+
+    for server in serverlist_valid {
 
         if exit_flag.load(Ordering::SeqCst) {
             break
         }
 
-        connect_to(servername);
+        connect_to(&server.0);
 
         sleep(Duration::from_millis(100));
 
@@ -154,38 +209,8 @@ pub fn run(config: Config) -> Result<(), Box<dyn Error>> {
 
         let internet = internet.unwrap();
 
-        // Get Server IP
-        let mut server = get_ip(&servername);
-
-        for _ in 1..=config.retries {
-            if let None = server {
-                sleep(Duration::from_millis(100));
-                server = get_ip(&servername);
-            } 
-        }
-        if let None = server {
-            eprintln!(" > Couldn't find server.");
-            continue
-        }
-        let server = server.unwrap();
-
-        if let false = verify_ip_match(&internet, &server) {
-            let stats = Stats {
-                nord_server: servername,
-                server_ip: server.ip,
-                internet_ip: internet.ip,
-                latency: 0.0,
-                jitter: 0.0,
-                packet_loss: 0.0,
-                no_pl_data: true,
-                download: 0.0,
-                upload: 0.0,
-                usage_score: 0.0,
-                game_score: 0.0,
-            };
-
-            scores.push(stats);
-
+        if let false = verify_ip_match(&internet, &server.1) {
+            scores.push(Stats::new(server.0, server.1, internet.ip));
             continue
         }
 
@@ -195,24 +220,10 @@ pub fn run(config: Config) -> Result<(), Box<dyn Error>> {
             eprintln!("Failed to flush stdout: {}", err);
             process::exit(1);
         });
-        let stats = speedtest(&servername, server.ip, internet.ip);
+        let stats = speedtest(server.0.clone(), server.1.ip, internet.ip);
         if let None = stats {
             eprintln!(" > Failed to do speedtest!");
-            let stats = Stats {
-                nord_server: servername,
-                server_ip: server.ip,
-                internet_ip: internet.ip,
-                latency: 0.0,
-                jitter: 0.0,
-                packet_loss: 0.0,
-                no_pl_data: true,
-                download: 0.0,
-                upload: 0.0,
-                usage_score: 0.0,
-                game_score: 0.0,
-            };
-
-            scores.push(stats);
+            scores.push(Stats::new(server.0, server.1, internet.ip));
             continue
         }
         let stats = stats.unwrap();
@@ -393,7 +404,7 @@ fn get_ip(servername: &str) -> Option<IP> {
     }
 }
 
-fn speedtest(servername: &str, server_ip: Ipv4Addr, internet_ip: Ipv4Addr) -> Option<Stats> {
+fn speedtest(servername: String, server_ip: Ipv4Addr, internet_ip: Ipv4Addr) -> Option<Stats> {
     let output = Command::new(r#"E:\Downloads\Programs\Windows\speedtest\speedtest.exe"#)
                         .args(&["-f", "tsv"])
                         .stderr(Stdio::null())
@@ -562,12 +573,11 @@ mod tests {
 
     #[test]
     fn verify_ip_valid() {
-        let myipname = "";
         let servername = "sg467.nordvpn.com";
 
         let server = get_ip(&servername);
         assert!(server.is_some());
-        let server = server.unwrap();
+        let _server = server.unwrap();
 
     }
 
@@ -594,3 +604,4 @@ mod tests {
 
 }
 
+// vim: foldmethod=syntax

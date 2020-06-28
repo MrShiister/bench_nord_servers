@@ -52,7 +52,7 @@ The score for a server is calculated by weightage of each individual stats. The 
 
 ## Future Work
 
-- [ ] Multithread finding server IPs, then do speedtest
+- [x] Multithread finding server IPs, then do speedtest
 - [ ] To not capture `SIGINT` more than once
 - [ ] To not let speedtest capture `SIGINT`
 - [ ] To not hardcode speedtest and nordvpn executable paths
