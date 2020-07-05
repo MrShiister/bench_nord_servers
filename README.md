@@ -2,7 +2,7 @@
 
 ## Description
 
-This is an executable program to find the NordVPN server that gives you the best connection. In particular, this program will do a speedtest benchmark on all NordVPN servers in `serverlist.txt` and print the best server for gaming and the best server for general usage.
+This is an executable program to find the NordVPN server that gives you the best connection. In particular, this program will do a speedtest benchmark on all NordVPN servers in the filename you specify as the first argument and print the best server for gaming and the best server for general usage.
 
 A `results_<time>.tsv` file is used to record the speedtest results for all valid NordVPN servers.
 
@@ -13,9 +13,9 @@ A `results_<time>.tsv` file is used to record the speedtest results for all vali
 - The program has multithreading control to stop benchmarking after this server when you hit `Ctrl-C`. However, hitting `Ctrl-C` in the middle of a speedtest will also kill the speedtest.
 
 - There are 2 very basic Rust tests written to make sure that getting the IPs work.
-- The program accepts (exactly) one argument: a text file of the list of NordVPN servers in the format `llddd.nordvpn.com`. If no argument is supplied, `serverlist.txt` in the same path as the executable is loaded.
+- The program accepts (exactly) one argument: a text file of the list of NordVPN servers in the format `llddd.nordvpn.com`. If no argument is supplied, all strings from sg100.nordvpn.com to sg500.nordvpn.com will be attempted.
 - The Windows NordVPN CLI does not have a way to verify you are indeed connected to the server you indicate. Hence, your connectivity to the correct server is verified by comparing the IP address of your Internet IP and the server IP; the first 3 octets must match, and the last octet must differ by at most 5.
-- Retrieving your Internet IP address is retried 100 times (no delay) if it failed. On the basis that there is no active Internet connection in this server, failing to retrieve your Internet IP address will also stop the attempt to get the IP address of the NordVPN server and move on to the next server.
+- Retrieving your Internet IP address is retried 15 times if it failed. On the basis that there is no active Internet connection in this server, failing to retrieve your Internet IP address will also stop the attempt to get the IP address of the NordVPN server and move on to the next server.
 
 
 

@@ -20,7 +20,7 @@ use std::{
 };
 
 pub struct Config {
-    filename: String,
+    filename: Option<String>,
     retries: u8,
 }
 
@@ -28,10 +28,7 @@ impl Config {
     pub fn new(mut args: std::env::Args) -> Result<Config, &'static str> {
         args.next();
 
-        let filename = match args.next() {
-            Some(arg) => arg,
-            None => String::from("serverlist.txt"),
-        };
+        let filename = args.next();
 
         if let Some(_) = args.next() {
             return Err("Too many arguments!");
@@ -125,13 +122,20 @@ pub fn run(config: Config) -> Result<(), Box<dyn Error>> {
 
     //let serverlist = vec!["sg467.nordvpn.com", "sg468.nordvpn.com"];
     let mut serverlist: Vec<String> = Vec::new();
-    let contents = fs::read_to_string(&config.filename)?;
-    for line in contents.lines() {
-        serverlist.push(line.to_string());
+    if let Some(f) = &config.filename {
+        let contents = fs::read_to_string(f)?;
+        for line in contents.lines() {
+            serverlist.push(line.to_string());
+        }
+    } else {
+        for i in 100..=500 {
+            let server = format!("sg{}.nordvpn.com", i);
+            serverlist.push(server);
+        }
     }
 
     if serverlist.len() == 0 {
-        eprintln!("No servers collected! {} is empty.", config.filename);
+        eprintln!("No servers collected!");
         process::exit(1);
     }
 
