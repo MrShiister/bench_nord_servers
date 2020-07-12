@@ -128,7 +128,7 @@ pub fn run(config: Config) -> Result<(), Box<dyn Error>> {
             serverlist.push(line.to_string());
         }
     } else {
-        for i in 100..=500 {
+        for i in 100..=999 {
             let server = format!("sg{}.nordvpn.com", i);
             serverlist.push(server);
         }
